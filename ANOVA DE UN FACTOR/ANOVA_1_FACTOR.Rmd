@@ -1,0 +1,281 @@
+---
+title: "MODELO DE ANÁLISIS DE LA VARIANZA (ANOVA)"
+author: "JOSÉ LUIS"
+date: "2024-11-17"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+    highlights: espresso
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = NA)
+```
+
+# CODIGO {.tabset}
+
+EN ESTE PROYECTO VAMOS A APRENDER A COMO REALIZAR UN MODELO DE ANÁLISIS DE VARIANZA, TAMBIÉN LLAMADO ANOVA. PASAREMOS POR LOS PASOS PREVIOS ANTES DE HACER EL MODELO Y LUEGO VEREMOS QUE SUPUESTOS SE DEBEN DE CUMPLIR PARA QUE EL MODELO SEA BUENO Y FIABLE. PARA ESTE PROYECTO, UTILIZAREMOS EL DATASET IRIS.
+
+## LIBRERIAS
+
+```{r}
+library(caret)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(kableExtra)
+library(skimr)
+library(tidymodels)
+library(tidyverse)
+library(corrplot)
+library(car)
+library(emmeans)
+library(ggpubr)
+```
+
+
+## DATASET
+```{r}
+data = iris
+
+head(data) %>% kable(format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center", font_size = 12) %>%
+  row_spec(0, background = "#287289", color = "white")
+```
+
+EL DATASET IRIS SE COMPONE DE 5 COLUMNAS. CUATRO DE ELLAS SON NÚMERICAS CONTINUA Y NOS INDICA LA LONGITUD Y ANCHO DE SEPALOS Y PÉTALOS. LA ULTIMA COLUMNA REPRESENTA A QUE ESPECIE PERTENECE CADA OBSERVACIÓN, SIENDO, POR TANTO, UNA VARIABLE CATEGORICA NOMINAL (PUES NO TIENE NINGÚN ORDEN)
+
+PARA SABER CUANTAS HAY OBSERVACIONES HAY DE CADA PLANTA, PODEMOS HACER RÁPIDAMENTE UN SUMMARY Y LO VEMOS
+```{r}
+summary(data)
+```
+
+OBSERVAMOS QUE HAY 50 PLANTAS DE CADA ESPECIE. A SU VEZ, HEMOS OBTENIDO INFORMACIÓN RELEVANTE DE LAS MEDIAS DE LAS VARIABLES NUMÉRICAS.
+
+
+## ANOVA {.tabset}
+
+### EXPLICACIÓN
+
+El ANOVA es una herramienta estadística que permite comparar las medias de más de dos grupos al mismo tiempo, evaluando si las diferencias observadas se deben al azar o a un efecto real. A diferencia de las comparaciones múltiples (como usar t-tests uno a uno), el ANOVA controla el error tipo I, dándonos conclusiones más robustas. Antes de empezar con el ANOVA y para entender un poco más en que consiste este modelo lineal especial, es importante parametrizar la variable factorial (aunque no es necesario para el ANOVA como tal)
+
+Los tipos de parametrización son:
+
+- **Parametrización a través de las medias locales:** Cada grupo tiene su propia media como coeficiente.
+
+- **Parametrización por desviación respecto de la media global:** Se calcula una media común, y cada grupo se interpreta como una desviación de esta media.
+
+- **Parametrización por desviación respecto de un grupo de referencia:** Un grupo actúa como referencia (el intercepto), y los coeficientes indican cuánto difieren los demás grupos respecto a este.
+
+EL MÁS PROPIO PARA UN ANOVA, SUELE SER LA PARAMETRIZACIÓN POR DESVIACIÓN RESPECTO DE LA MEDIA GLOBAL Y ES MUY ÚTIL PARA INTERPRETAR LAS DIFERENCIAS GENERALES ENTRE GRUPOS.
+
+ANTES DE PARAMETRIZAR, DEBEMOS ELEGIR, EN ESTE ANOVA DE UN SOLO FACTOR (YA QUE SOLO TENEMOS UNA VARIABLE CATEGORICA EXPLICATIVA), QUE VARIABLE CONTINUA VAMOS A ELEGIR. EN ESTE CASO, ELEGIREMOS LA LONGITUD DEL PÉTALO (Sepal.lenght).
+
+### PARAMETRIZACIÓN
+
+PRIMERO CALCULAMOS LAS MEDIAS LOCALES, YA SEA A TRAVES DE UN TAPPLY O CON LM. DESPUÉS, TENEMOS QUE CALCULAR LA MEDIA GLOBAL DE Sepal.Length. LUEGO, PARAMETRIZAMOS Sepal.Length POR DESVIACIÓN RESPECTO A LA MEDIA GLOBAL
+
+
+```{r}
+# medias locales
+medias_locales = tapply(data$Sepal.Length, data$Species, mean)
+medias_locales
+```
+```{r}
+lm(data$Sepal.Length ~ data$Species -1)
+```
+
+```{r}
+# Media global
+media_global = mean(data$Sepal.Length)
+
+# Calculamos alfa
+alfa = medias_locales - media_global
+
+# Rsultados
+media_global
+alfa
+```
+LA MEDIA GLOBAL DE LA VARIABLE Sepal.Length ES DE 3.758 Y LAS DESVIACIÓN RESPECTO A LA MEDIA GLOBAL SON LAS QUE ESTÁN EN CADA GRUPO (setosa = -0.8373; versicolor = 0.0926; virgínica = 0.7446)
+
+
+A continuación, podemos parametrizar, empleando la especie setosa como grupo de referencia, a través de la función lm
+```{r}
+modelo = lm(data$Sepal.Length ~ data$Species)
+summary(modelo)
+```
+
+De este Summary, tenemos que explicar varias cosas:
+
+Los coeficientes hacen referencia a los niveles de nuestra variable factor (setosa = referencia, versicolor y virginica). A estos coeficientes se les dará unas estimaciones, que representan el cambio con respecto al intercepto (grupo de refeencia), la desviación estandar y, muy importante, el nivel crítico (P-valor). 
+
+Luego, tenemos los resultado de la variabilidad y el test F. Este último es muy importante para explicar la variabilidad de las medias de los grupos. Podemos ver que su P-value es de 2.2e-16, Muy pequeño, por lo que si que podemos ver que hay, sin necesidad de un ANOVA, ver que las medias son distintas entre las diferentes especies para la variable Sepal.Length.
+
+Por último, aunque a nosotros nos ponga la especie setosa como el grupo de referencia, podemos cambiarlo con la función relevel
+(Ej: Specie_2ref = relevel(data$Species, ref "2")) De esta manera, la referencia ahora serie la especie versicolor. Podriamos hacer de nuevo el lm y ver como se comporta el modelo.
+
+
+### MODELO ANOVA
+
+Una vez visto lo anterior, vamos a hacer el modelo ANOVA y ver el estadístico F de antes. Para ello, al modelo anterior, solo tendremos que aplicarle la función anova
+
+```{r}
+anova(modelo)
+```
+
+Nos tenemos que fijar en data$Species, que es nuestra variable predictiva. En ella, nos iremos al valor critico Pr(>F) y, como vemos, coincide con el F del modelo. Es muy significativo, por lo que podemos concluir que SI existen diferencias en las medias de los grupos setosa, versicolor y virginica para la variable Sepal.Length.
+
+### OTRA FORMA DE UTILIZAR EL ANOVA
+
+USAR LA FUNCIÓN AOV
+```{r}
+modelo_aov = aov(data$Sepal.Length ~ Species, data = data)
+summary(modelo)
+```
+Si nos fijamos, nos da exactamente lo mismo que cuanto hicimos el lm. Si nos vamos al F-statistic, veremos que tiene el mismo valor crítico.
+
+Bien. Ahora que sabemos que hay diferencias en las medias, cabría esperar la pregunta de ¿Donde hay más diferencia? ¿Setosa y Versicolor? ¿Setosa y Virginica? ¿Tal vez en Versicolor y Virginica? Pues bien, es lo que vamos a analizar ahora nosotros.
+
+## COMPARACIONES POR PAREJAS {.tabset}
+
+Al rechazar la hipotesis nula de que las medias son iguales, vamos a ver como son estás diferencias por parejas. Para ello, vamos a usar dos tests: Test de Bonferroni y Test de Tukey
+
+### BONFERRONI
+
+```{r}
+pairwise.t.test(data$Sepal.Length,
+                data$Species,
+                p.adjust.method = "bonferroni")
+```
+Bien, En este test lo que podemos observar es que las filas y columnas son los niveles de la variable factor Species. Los valores de la tabla son los p-valores que nos indica si hay diferencia en las medias o no. Podemos observar como todas las especies tienen una significancia muy alta, por lo que las medias son distintas para todas las especies de manera muy significativa.
+
+### TUKEY
+```{r}
+TukeyHSD(aov(data$Sepal.Length ~ data $Species))
+```
+En este caso, lo que nos muestra este test es:
+
+1) Las combinaciones distintas que existen
+2) La diferencia entre cada par de parejas
+3) Los intervalos de confianza (lwr = extremo izq; upr = extremo der)
+
+Aqui lo importante es que, como podemos ver en los intervalos de confianza, ninguno pasa por el 0. Esto quiere decir que ninguna media para cada par de niveles son iguales. Donde parece haber más significación es entre la Virginica y la setosa.
+
+Pero, para que todo sea más visual, podriamos acompañarlo de un gráfico que nos muestre las medias y como se distribuyen.
+
+```{r}
+ggplot(data, aes(x = Species, y = Sepal.Length)) +
+  geom_boxplot(fill = "skyblue") +
+  theme_minimal() +
+  labs(title = "Distribución de la longitud del Sepaló por Especie")
+```
+
+Aqui podemos ver claramente que, las medias de las tres especies son muy distintas, cosa que ya sabiamos gracias a todo lo anterior. Además, la diferencia entre la setosa y la virginica es claramente mayor que entre el resto de pares de niveles, cosa que acabamos de ver con el test de tukey.
+
+
+## CONDICIONES DEL ANOVA {.tabset}
+
+Para terminar, es importante aclarar que, como cualquier modelo de regresión, el ANOVA también debe cumplir ciertas suposiciones. Estas son:
+
+- **Normalidad de los residuos:** Los residuos del modelo deben seguir una distribución normal.
+
+- **Homogeneidad de varianzas (Homocedasticidad):** Las varianzas de los grupos deben ser similares.
+
+- **Independencia de las observaciones::** Cada muestra debe ser independiente de las demás.
+
+
+### NORMALIDAD
+
+para verificar la normalidad, podemos usar varios tests:
+
+- Test de Kolmogorov-Smirnov-Lilliefors
+```{r}
+library(nortest)
+
+# Aplicar el test a cada nivel
+
+# Setosa
+lillie.test(data$Sepal.Length[data$Species == "setosa"])
+
+# Versicolor
+lillie.test(data$Sepal.Length[data$Species == "versicolor"])
+
+# Virginica
+lillie.test(data$Sepal.Length[data$Species == "virginica"])
+
+# Otra forma de hacerlo más sencillo
+by(iris$Sepal.Length, iris$Species, function(x) lillie.test(x))
+```
+Para evaluar este test, tenemos que fijarnos en el p-valor, ya que si este es mayor a 0.05 es que los datos se distribuyen normalmente, y si es menor a 0.05, no. En este caso, parece que se cumple esta condición para todos los niveles
+
+
+- Test de normalidad de Anderson-Darling
+```{r}
+# Aplicar el test Anderson-Darling por niveles
+by(iris$Sepal.Length, iris$Species, function(x) ad.test(x))
+```
+
+De igual forma, se cumple la condición para todos los niveles
+
+- Test de Shapiro-Wilks
+```{r}
+# Aplicar el test Shapiro-Wilk por niveles
+by(iris$Sepal.Length, iris$Species, shapiro.test)
+```
+
+Se cumple la condición también de normalidad con este test.
+
+### HOMOCEDASTICIDAD
+
+Podemos usar varios tests aqui también:
+
+- Test de Bartlett
+```{r}
+bartlett.test(data$Sepal.Length ~ data$Species)
+```
+
+- Test de Levene
+```{r}
+library(car)
+leveneTest(data$Sepal.Length, data$Species, center = "mean")
+```
+
+Parece que los supuestos de homocedasticidad no se cumplen. Podriamos estar ante un anova no muy fiable y habria que obtar por otra opción.
+
+### INDEPENDENCIA DE LAS OBSERVACIONES
+
+Este supuesto no se puede verificar directamente con una prueba estadística, pero asumimos que los datos se recogen de manera independiente y que no hay dependencias entre las observaciones.
+
+Por último, vamos a ver una serie de gráficos que acompaña a los tests que hemos visto antes
+```{r}
+plot(modelo_aov)
+```
+
+- **Gráfico de Residuos vs. Ajustados (Residuals vs. Fitted)**: Este gráfico muestra los residuos del modelo (la diferencia entre los valores observados y los ajustados) en función de los valores ajustados. Si siguen un patrón, hay heterocedasiticidad. En caso contrario, homocedasticidad. En este caso vemos que hay una clara heterocedasiticadad, cosa que ya habiamos visto con los tests correspondientes.
+
+- **Gráfico Q-Q de Residuos (Normal Q-Q):** compara los residuos del modelo con una distribución normal teórica. Los puntos se alinean con la linea diagonal, denotando que siguen una distribución normal. 
+
+- **Gráfico de Residuos Estándar vs. Leverage:** Muestra los residuos estandarizados en función de la medida de apalancamiento (leverage), que indica la influencia de cada punto de datos en el ajuste del modelo. Aqui se suelen buscar puntos que no se alejen demasiado de la distribución esperada, ya que puntos con alto laverage pueden tener una gran influencia en los resultados del ANOVA. Vemos que no hay demasiados puntos con alto laverage
+
+- **Gráfico de Residuos vs. Orden de Observación:** Muestra los residuos frente al orden de las observaciones en el conjunto de datos. Sirve para comprobar la independencia de los residuos. Los puntos deberían estar distribuidos aleatoriamente, sin patrones evidentes. En este caso, aunque parezca seguir un patron, no podemos decir que hayan sido elegidos de forma dependiente, asi que a este último grafico no le haremos mucho caso
+
+## CONCLUSIONES
+
+En este análisis de varianza (ANOVA) sobre la variable Sepal.Length del dataset Iris, el objetivo fue determinar si existen diferencias estadísticamente significativas en las longitudes del sépalo entre las tres especies de Iris (Setosa, Versicolor y Virginica). Los resultados muestran lo siguiente:
+
+1º ANOVA: La prueba de ANOVA indicó que hay diferencias significativas en las medias de Sepal.Length entre las especies (p-valor < 0.05). Esto sugiere que al menos una de las especies tiene una longitud de sépalo diferente a las otras.
+
+2º Diagnóstico de los residuos: Al evaluar los gráficos de diagnóstico del modelo, se observó que:
+
+  - El gráfico de Residuos vs. Ajustados mostró un patrón de        heterocedasticidad, lo que indica que las varianzas entre       los grupos no son homogéneas. Este comportamiento sugiere       que las suposiciones de homocedasticidad para el ANOVA          no se cumplen completamente.
+  
+  - El gráfico Q-Q de los residuos mostró una ligera desviación     de la línea de normalidad, pero en general, los residuos        parecen aproximarse a una distribución normal.
+  
+  
+  - A pesar de que la normalidad de los residuos parece             cumplirse en su mayoría, la violación de la                     homocedasticidad podría afectar la validez de los               resultados.
+  
+3º Recomendaciones: Dado que la suposición de homocedasticidad no se cumple completamente, sería prudente considerar una transformación de los datos (por ejemplo, logaritmo o raíz cuadrada) o utilizar pruebas alternativas que no asuman homocedasticidad, como el ANOVA de Welch. También se podrían explorar modelos robustos que ofrezcan resultados más confiables en presencia de heterocedasticidad.
