@@ -1,0 +1,188 @@
+---
+title: "ANCOVA (Análisis de Covarianza)"
+author: "José Luis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# CODIGO {.tabset}
+
+## LIBRERIAS
+```{r}
+library(kableExtra)
+library(tidyverse) # %>%
+library(nortest)
+library(car)
+library(plotly)
+library(multcomp)
+library(emmeans)
+```
+
+## INTRODUCCIÓN
+
+El ANCOVA (Analysis of Covariance) es una técnica estadística que compara las medias de grupos mientras ajusta por el efecto de una o más variables continuas llamadas covariables. Esto nos permite eliminar el efecto de esas covariables y centrarnos en las diferencias entre los grupos.
+
+Es, en esencia, una combinación del ANOVA (para comparar grupos) y la regresión lineal (para ajustar por covariables).
+
+## SUPUESTOS QUE DEBEN CUMPLIRSE DE UN ANCOVA {.tabset}
+
+-Las muestras son m.a.s. independientes
+
+-La variable dependiente sigue una distribución normal
+
+-Homocedasticidad = Varianzas iguales
+
+-La relación entre la variable dependiente y la covariable es lineal
+
+-No hay interacción entre la variable independiente factor y la covariable
+
+## EJEMPLO: IRIS 
+
+Queremos saber si la relación entre:
+
+  - Sepal.Width = variable dependiente
+  - Petal.Length = covariable
+  
+es diferente entre Species
+```{r}
+data(iris)
+
+data = iris
+
+attach(iris)
+
+head(data) %>% kable() %>% kable_styling()
+```
+## SUPUESTO DEL ANCOVA {.tabset}
+
+Para que el ANCOVA sea válido, debemos cumplir ciertos supuestos:
+
+- Normalidad de los residuos: Los residuos deben seguir una distribución normal.
+
+- Homogeneidad de varianzas: Las varianzas de los grupos deben ser iguales (similar al ANOVA).
+
+- Linealidad: La relación entre la covariable(s) y la variable dependiente debe ser lineal.
+
+- Homogeneidad de pendientes: La relación entre la covariable y la variable dependiente debe ser consistente en todos los niveles del factor.
+
+- Independencia de observaciones: Las muestras deben ser independientes.
+
+Si no se cumplen estos supuestos, los resultados del ANCOVA podrían no ser confiables.
+
+### NORMALIDAD
+
+Test Shapiro-Wilk
+```{r}
+
+lillie.test(Sepal.Width[Species=="setosa"])
+```
+
+```{r}
+lillie.test(Sepal.Width[Species=="versicolor"])
+```
+
+```{r}
+lillie.test(Sepal.Width[Species=="virginica"])
+```
+Este ultimo p-valor no es mayor que 0.05, por lo que tendriamos que pararnos a analizar esto mediante estadística no paramétrica, pero como esto es un simple ejemplo academico, daremos por hecho que El p-valor es > 0.05, los datos se distribuyen según una normal
+
+### HOMOCEDASTICIDAD
+
+Test Levene
+```{r}
+
+leveneTest(Sepal.Width ~ Species)
+```
+
+test Bartlett
+```{r}
+bartlett.test(Sepal.Width ~ Species)
+```
+El p-valor es > 0.05, las varianzas son iguales
+
+### LINEALIDAD ENTRE LA VARIABLE INDEPENDIENTE Y LA COVARIABLE
+
+Diagrama de dispersión entre Petal.Length y Sepal.Width
+```{r}
+plot_ly(data = iris,
+        x = ~Petal.Length,
+        y = ~Sepal.Width,
+        color = ~Species)
+```
+Tampoco cumple el supuesto de linealidad, pero vamos a seguir. Tendriamos que optar por otras opciones
+
+### INTERACCION ENTRE LA VARIABLE INDEPENDIENTE FACTOR Y LA COVARIABLE
+
+Lo podemos hacer mediante un lm o mediante aov
+
+LM
+```{r}
+lm.1 = lm(Sepal.Width ~ Species*Petal.Length, data = data)
+
+anova(lm.1)
+```
+El p-valor de Species:Petal.Length es > 0.05, no hay interacción (no hay diferencias en las pendientes)
+
+
+ANCOVA (AOV)
+```{r}
+# Realizar el ANCOVA
+ancova_model <- aov(Sepal.Length ~ Petal.Length + Species, data = data)
+
+# Resumen del modelo
+summary(ancova_model)
+```
+Esta es la tabla ancova, que no deja de ser una anova. El p-valor de Species y Petal.Length es < 0.05 
+
+El valor "p" muy bajo del término Species nos permite confiar en que la anchura de los sépalos varía sistemáticamente entre las tres especies.
+
+
+```{r}
+# Verificar la interacción (homogeneidad de pendientes)
+interaction_model <- aov(Sepal.Length ~ Petal.Length * Species, data = data)
+summary(interaction_model)
+```
+Esta es la interacción con el aov, en vez de poner un "+" entre Species y Petal.Length ponemos un "*".
+
+Observamos que la interacción Petal.Length:Species no tiene un p-valor mayor a 0.05, por lo que decidimos que no hay interacción.
+
+Todo junto quedaría asi:
+```{r}
+# Realizar el ANCOVA
+ancova_model <- aov(Sepal.Length ~ Petal.Length + Species, data = data)
+
+# Resumen del modelo
+summary(ancova_model)
+
+# Verificar la interacción (homogeneidad de pendientes)
+interaction_model <- aov(Sepal.Length ~ Petal.Length * Species, data = data)
+summary(interaction_model)
+```
+
+## COMPARACIONES POST-HOC
+
+¿Qué grupos son diferentes?
+```{r}
+# Comparación post-hoc por tukey
+posthoc = glht(ancova_model,
+               linfct = mcp(Species = "Tukey"))
+
+# Summary
+summary(posthoc)
+```
+Observamos que para cada par, el p-valor es significativo, por lo que concluimos con que hay diferencias
+
+```{r}
+# Comparaciones de medias ajustadas
+emmeans_results <- emmeans(ancova_model, ~ Species)
+
+# Comparaciones post-hoc con corrección de Bonferroni
+posthoc_bonferroni <- pairs(emmeans_results, adjust = "bonferroni")
+
+# Resumen de resultados
+summary(posthoc_bonferroni)
+```
+En el ajuste de bonferroni pasa lo mismo, para cada par, el p-valor es significativo, por lo que concluimos con que hay diferencias entre los grupos.
